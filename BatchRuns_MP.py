@@ -13,10 +13,10 @@ import multiprocessing as mp
 #CODE
 #_________________________________________________________________________________
 def run_sim(params):
-    mass, capacity, solararea, power, simtime = params
+    name, mass, capacity, solararea, power, simtime = params
 
     # Initialize vehicle and environment
-    path = dyn.Path(name='CGV', type='A2A')
+    path = dyn.Path(name=name, type='A2A')
     env = dyn.Environment(path, StartDateTimeLocal='2025-06-15 00:00:00')
     rider = dyn.Rider()
     battery = dyn.Battery(capacity=capacity)
@@ -47,10 +47,12 @@ if __name__ == "__main__":
         for power in power_sweep
     ]
 
-    # Use all available CPU cores
-    # with mp.Pool(mp.cpu_count()) as pool:
-    #     pool.map(run_sim, param_grid)
-
-    # Use specified CPU cores
-    with mp.Pool(processes=6) as pool:
-        pool.map(run_sim, param_grid)
+    for name in ['CGV', 'PROTOUR']:
+        param_grid_named = [(name, mass, capacity, solararea, power, simtime) for (mass, capacity, solararea, power, simtime) in param_grid]
+        # Use specified CPU cores
+        with mp.Pool(processes=6) as pool:
+            pool.map(run_sim, param_grid_named)
+        
+        # Use all available CPU cores
+        # with mp.Pool(mp.cpu_count()) as pool:
+        #     pool.map(run_sim, param_grid_named)
