@@ -674,7 +674,7 @@ class Vehicle():
     #Vehicle class to model the vehicle dynamics assembling all other classes
     #The dynamics method is used with a numerical integrator to solve the equations of motion
     #
-    def __init__(self, environment, rider, battery, solarpanel, chassis, motor):
+    def __init__(self, environment:Environment, rider:Rider, battery:Battery, solarpanel:SolarPanel, chassis:Chassis, motor:Motor):
         self.environment = environment
         self.rider = rider
         self.battery = battery
@@ -792,7 +792,7 @@ class Vehicle():
 
             net_force, P_motor = self.F_tot_brake(v, self.environment.slope, self.relativewindspeed)
 
-            if v < 0.2:
+            if v < 0:
                 v = 0
                 net_force = 0
                 P_motor = 0
@@ -870,7 +870,7 @@ def CurrentWeather(TMYData, Time):
 #different simulate functions
 #solves vehicle.dynamics for a specified simulation time, dt and initial SOC 
 #initial position and velocity are set to 0 and are then controlled by the rider shifts conditions
-def simulate_fixedtimestep(vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, output = "full"):
+def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, output = "full"):
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
@@ -921,6 +921,9 @@ def simulate_fixedtimestep(vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, outp
             if getattr(vehicle.environment, "pathcomplete", False):
                 break
 
+            if vehicle.rider.riding == False and X[1] < 0:
+                X[1] = 0  # set velocity to 0 if not riding
+   
             dX = np.array(vehicle.dynamics(t, X)) * dt
             X = X + dX
 
