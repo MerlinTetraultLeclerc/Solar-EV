@@ -442,7 +442,7 @@ class Environment():
     #Environment class to store environment constants, such as air density and gravity
     #Also have functions to retrieve environment variables, such as
     #Floor variables : slope, altitude
-    def __init__(self, path, StartDateTimeLocal = '2025-06-15 08:00:00'):
+    def __init__(self, path:Path, StartDateTimeLocal = '2025-06-15 08:00:00'):
         self.rho = 1.2 # kg/m^3, air density at sea level and 20 degrees Celsius
         self.g = 9.81 # m/s^2, acceleration due to gravity
         self.path = path
@@ -770,11 +770,6 @@ class Vehicle():
         self.solarpanel.get_FixedSolarPower_isotropic(self.environment.weather, self.environment.solarposition, self.environment.day, self.environment.shade, self.environment.slope, self.environment.direction)
 
         if self.rider.riding == True:
-            if v < 0:
-                print('negative velocity at time', t, 'distance', v)
-                self.environment.pathcomplete = True
-            elif v < 0.2:
-                v = 0.2
 
             if self.environment.weather[0] > 180:
                 WindDirection = self.environment.weather[0] - 360
@@ -792,7 +787,7 @@ class Vehicle():
 
             net_force, P_motor = self.F_tot_brake(v, self.environment.slope, self.relativewindspeed)
 
-            if v < 0:
+            if v < 0.01:
                 v = 0
                 net_force = 0
                 P_motor = 0
@@ -921,6 +916,13 @@ def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i =
             if getattr(vehicle.environment, "pathcomplete", False):
                 break
 
+            if vehicle.rider.riding == True:
+                if X[1] < 0:
+                    print('negative velocity at time', t, 'distance', X[0], 'speed', X[1])
+                    vehicle.environment.pathcomplete = True
+                elif X[1] < 0.2:
+                    X[1] = 0.2
+
             if vehicle.rider.riding == False and X[1] < 0:
                 X[1] = 0  # set velocity to 0 if not riding
    
@@ -1009,3 +1011,188 @@ def simulate_RK45(vehicle, simtime_s = 60*60*1, SOC_i = 1):
     os.makedirs('SIMRESULTS', exist_ok=True)
     filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
     df.to_csv(filename, index=False)
+
+def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 1e-3, 1.0], rtol=1e-3, 
+                              base_dt = 1, max_dt=2, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True):
+    mass = vehicle.mass
+    motor_power = vehicle.motor.RatedPower
+    solar_area = vehicle.solarpanel.area
+    battery_capacity = vehicle.battery.capacity
+    path = vehicle.environment.path.name
+    os.makedirs('SIMRESULTS', exist_ok=True)
+    filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
+
+    # Skip simulation if file exists
+    if os.path.exists(filename):
+        print(f"File {filename} already exists. Skipping simulation.")
+        return
+
+    x_i = 0  # m
+    v_i = 0 / 3.6  # m/s
+    vehicle.battery.SOC = SOC_i
+    E_i = vehicle.battery.capacity * 3600 * vehicle.battery.SOC  # Ws
+
+    X = np.array([x_i, v_i, E_i])
+    t = 0.0
+    t_factor = 1.0
+
+    atol = np.array(atol)  # exemple: [m, m/s, J]
+
+    end_time = simtime_s
+    max_dt_user = max_dt 
+
+    # Define CSV header
+    if output == "full":
+        header = [
+            "simtime", "Distance", "Velocity", "Energy", "Times_local", "Times_UTC",
+            "lat", "long", "altitude", "timezone", "slope", "direction",
+            "WindDirection", "WindSpeed", "Pressure", "Temperature",
+            "dni", "ghi", "dhi", "Relativewindspeed", "Motorpower",
+            "POAIrradiance", "Solarpower"
+        ]
+    elif output == "light":
+        header = [
+            "simtime", "Distance", "Velocity", "Energy", "Times_local", "Times_UTC",
+            "lat", "long", 
+        ]
+    else:
+        raise ValueError("output must be 'full' or 'light'")
+
+
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(header)
+    
+        if use_pbar: 
+            pbar = tqdm(total=int(end_time), desc="simulating")
+
+        try:
+            while t < end_time:
+                accept_step = True
+                X_prev = X.copy()
+
+                #Spetial logic when resting
+                if vehicle.rider.riding == True:
+                    if X[1] < 0:
+                        print('negative velocity at time', t, 'distance', X[0], 'speed', X[1])
+                        break
+                    elif X[1] < 0.2:
+                        X[1] = 0.2
+                    max_dt = max_dt_user
+                else:
+                    max_dt = max_dt_user*10
+
+                if vehicle.rider.riding == False and X[1] < 0:
+                    X[1] = 0  # set velocity to 0 if not riding
+                
+                # Runge-Kutta 4(5) method
+                dt = base_dt * t_factor
+                X_1_dot = np.array(vehicle.dynamics(t, X))  # slope at 0
+                X_2_dot = np.array(vehicle.dynamics(t + dt/2, X + X_1_dot*dt/2))  # RK2 term
+                X_3_dot = np.array(vehicle.dynamics(t + dt/2, X + X_2_dot*dt/2))  # RK3 term
+                X_4_dot = np.array(vehicle.dynamics(t + dt, X + X_3_dot*dt))  # RK4 term
+
+                dX = (dt/6)*(X_1_dot + 2*X_2_dot + 2*X_3_dot + X_4_dot)
+                dX_minor = (dt/6)*(X_1_dot + 4*X_2_dot + X_3_dot)
+                X = X + dX
+                scale = atol + rtol * np.maximum(np.abs(X_prev), np.abs(X_prev + dX))
+                err_vec = np.abs(dX - dX_minor) / scale
+                err = np.max(err_vec)
+                
+                #Adaptive time step control
+
+                #Error based adaptive time step control
+                safety = 0.9
+                p = 3 # ordre du schéma "minor"
+                if err == 0:
+                    err_factor = 2.0  #Maximum dt factor if no error
+                else:
+                    err_factor = safety * (1.0 / err)**(1.0 / (p + 1))
+
+                #Discontinuity based adaptive time step control
+                if dX[1] == 0: 
+                    discontinuity_factor = 2.0 #Maximum dt factor if no error
+                else:
+                    discontinuity_factor = safety * (max_dv / abs(dX[1]))**(1.0 / (1 + 1))
+
+                #Adapt time step, only one factor is applied, the most restrictive
+                factor = min(err_factor, discontinuity_factor)
+                t_factor *= factor
+                
+
+                #Finals adjustements to t_factor
+                if base_dt*t_factor > max_dt:
+                    t_factor = max_dt/base_dt
+
+                #Accept or reject step
+                if abs(dX[1]) > max_dv:
+                    accept_step = False
+
+                if accept_step == False:
+                    X = X_prev # Revert state
+                else:
+                    t += dt # Advance time
+
+                if use_pbar:
+                    # Manually control bar position = simulated time
+                    pbar.n = min(int(t), int(end_time))   # clamp just in case
+                    pbar.refresh()              # redraw
+
+                    # (optional) show diagnostics on the bar
+                    pbar.set_postfix(err=f"{err:.2e}", dt=f"{dt:.4f}")
+
+                if accept_step:
+                    if output == "full":
+                        # Extract location and weather attributes
+                        loc = vehicle.environment.location
+                        weather = vehicle.environment.weather
+
+                        row = [
+                            t,
+                            X[0],  # Distance
+                            X[1],  # Velocity
+                            X[2],  # Energy
+                            vehicle.environment.DateTimeLocal,
+                            vehicle.environment.DateTimeUTC,
+                            loc.latitude,
+                            loc.longitude,
+                            loc.altitude,
+                            str(loc.tz),
+                            vehicle.environment.slope,
+                            vehicle.environment.direction,
+                            weather[0],  # WindDirection
+                            weather[1],  # WindSpeed
+                            weather[2],  # Pressure
+                            weather[3],  # Temperature
+                            weather[4],  # dni
+                            weather[5],  # ghi
+                            weather[6],  # dhi
+                            vehicle.relativewindspeed,
+                            vehicle.motorpower,
+                            vehicle.solarpanel.I,
+                            vehicle.solarpanel.solarpower
+                        ]
+                    else: #light
+                        # Extract location only
+                        loc = vehicle.environment.location
+
+                        row = [
+                            t,
+                            X[0],  # Distance
+                            X[1],  # Velocity
+                            X[2],  # Energy
+                            vehicle.environment.DateTimeLocal,
+                            vehicle.environment.DateTimeUTC,
+                            loc.latitude,
+                            loc.longitude,
+                        ]
+                    writer.writerow(row)
+
+
+        finally:
+            # Make sure bar ends in a clean state
+            if t < end_time and getattr(vehicle.environment, "pathcomplete", False):
+                # If you want it to look 'finished' even when ending early:
+                pbar.n = end_time
+                pbar.refresh()
+            pbar.close()

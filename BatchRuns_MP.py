@@ -30,6 +30,25 @@ def run_sim(params):
     # Run simulation (will skip if results file exists)
     dyn.simulate_fixedtimestep(vehicle, simtime_s=simtime, dt=1, SOC_i=1, output = "light")
 
+def run_sim_adaptative(params):
+    name, mass, capacity, solararea, power, simtime = params
+
+    # Initialize vehicle and environment
+    path = dyn.Path(name=name, type='A2A')
+    env = dyn.Environment(path, StartDateTimeLocal='2025-06-15 00:00:00')
+    rider = dyn.Rider()
+    battery = dyn.Battery(capacity=capacity)
+    solarpanel = dyn.SolarPanel(area=solararea)
+    chassis = dyn.Chassis(mass=20, CdA=0.599631, Crr=0.004)
+    chassis.cargo_mass = 30
+    motor = dyn.Motor(RatedPower=power, efficiency=1)
+    vehicle = dyn.Vehicle(env, rider, battery, solarpanel, chassis, motor)
+    vehicle.mass = mass
+
+    # Run simulation (will skip if results file exists)
+    dyn.simulate_variabletimestep(vehicle, simtime_s=simtime, atol=[1, 0.01, 50.0], rtol=0.001,
+                                   base_dt=1, max_dv=0.2, max_dt=5, SOC_i=1, output = "light")
+
 if __name__ == "__main__":
     simtime = 60*60*24*15
 
@@ -50,8 +69,8 @@ if __name__ == "__main__":
     for name in ['CGV', 'PROTOUR']:
         param_grid_named = [(name, mass, capacity, solararea, power, simtime) for (mass, capacity, solararea, power, simtime) in param_grid]
         # Use specified CPU cores
-        with mp.Pool(processes=6) as pool:
-            pool.map(run_sim, param_grid_named)
+        with mp.Pool(processes=12) as pool:
+            pool.map(run_sim_adaptative, param_grid_named)
         
         # Use all available CPU cores
         # with mp.Pool(mp.cpu_count()) as pool:
