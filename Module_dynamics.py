@@ -654,7 +654,7 @@ class Motor():
         self.RatedPower = RatedPower
         self.efficiency = efficiency
         self.CutoffSpeed = 40/3.6 # m/s
-        self.MaxRegenSpeed = 50/3.6 # m/s
+        self.MaxRegenSpeed = 25 # m/s
 
 
     def motor_Pf(self, v):
@@ -792,7 +792,7 @@ class Vehicle():
 
             net_force, P_motor = self.F_tot_brake(v, self.environment.slope, self.relativewindspeed)
 
-            if v < 0:
+            if v <= 0:
                 v = 0
                 net_force = 0
                 P_motor = 0
