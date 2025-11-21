@@ -685,6 +685,7 @@ class Vehicle():
         self.relativewindspeed = None
         self.motorpower = None
         self.mass = self.chassis.mass + self.rider.mass + self.chassis.cargo_mass
+        self.environment_filter_alpha = 0.1
 
     def get_totalmass(self):
         chassis = self.chassis.mass
@@ -766,7 +767,23 @@ class Vehicle():
 
         self.environment.get_weather(self.environment.DateTimeUTC, self.environment.TMYData, self.environment.HorizonData)
         self.rider.isriding(self.environment.DateTimeLocal)
-        
+
+
+        if hasattr(self, 'prev_slope') == False:
+            self.prev_slope = self.environment.slope if self.environment.slope is not None else 0
+            self.prev_weather_0 = self.environment.weather[0] if self.environment.weather is not None else 0
+            self.prev_weather_1 = self.environment.weather[1] if self.environment.weather is not None else 0
+            
+        #Smooth environmental variables to avoid numerical instabilities
+        self.environment.slope = (1 - self.environment_filter_alpha) * self.prev_slope + self.environment_filter_alpha * self.environment.slope
+        self.environment.weather = list(self.environment.weather)
+        self.environment.weather[0] = (1 - self.environment_filter_alpha) * self.prev_weather_0 + self.environment_filter_alpha * self.environment.weather[0]
+        self.environment.weather[1] = (1 - self.environment_filter_alpha) * self.prev_weather_1 + self.environment_filter_alpha * self.environment.weather[1] 
+
+        self.prev_slope = self.environment.slope if self.environment.slope is not None else 0
+        self.prev_weather_0 = self.environment.weather[0] if self.environment.weather is not None else 0
+        self.prev_weather_1 = self.environment.weather[1] if self.environment.weather is not None else 0
+
         self.solarpanel.get_FixedSolarPower_isotropic(self.environment.weather, self.environment.solarposition, self.environment.day, self.environment.shade, self.environment.slope, self.environment.direction)
 
         if self.rider.riding == True:
@@ -1003,7 +1020,8 @@ def simulate_RK45(vehicle, simtime_s = 60*60*1, SOC_i = 1):
     df.to_csv(filename, index=False)
 
 def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 1e-3, 1.0], rtol=1e-3, 
-                              base_dt = 1, max_dt=2, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True):
+                              base_dt = 1, max_dt=2, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True,
+                              skip_if_result_exist = True):
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
@@ -1013,7 +1031,7 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
     filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
 
     # Skip simulation if file exists
-    if os.path.exists(filename):
+    if skip_if_result_exist and os.path.exists(filename):
         print(f"File {filename} already exists. Skipping simulation.")
         return
 
