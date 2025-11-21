@@ -654,7 +654,7 @@ class Motor():
         self.RatedPower = RatedPower
         self.efficiency = efficiency
         self.CutoffSpeed = 40/3.6 # m/s
-        self.MaxRegenSpeed = 50/3.6 # m/s
+        self.MaxRegenSpeed = 25 # m/s
 
 
     def motor_Pf(self, v):
@@ -787,7 +787,7 @@ class Vehicle():
 
             net_force, P_motor = self.F_tot_brake(v, self.environment.slope, self.relativewindspeed)
 
-            if v < 0.01:
+            if v <= 0:
                 v = 0
                 net_force = 0
                 P_motor = 0
@@ -899,7 +899,6 @@ def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i =
             "POAIrradiance", "Solarpower"
         ]
     elif output == "light":
-        "Times_UTC", "lat", "long", "Distance", "Velocity", "Energy"
         header = [
             "simtime", "Distance", "Velocity", "Energy", "Times_local", "Times_UTC",
             "lat", "long", 
@@ -969,15 +968,6 @@ def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i =
                     X[1],  # Velocity
                     X[2],  # Energy
                     vehicle.environment.DateTimeLocal,
-                    vehicle.environment.DateTimeUTC,
-                    loc.latitude,
-                    loc.longitude,
-                ]
-                row = [
-                    t,
-                    X[0],  # Distance
-                    X[1],  # Velocity
-                    X[2],  # Energy
                     vehicle.environment.DateTimeUTC,
                     loc.latitude,
                     loc.longitude,
