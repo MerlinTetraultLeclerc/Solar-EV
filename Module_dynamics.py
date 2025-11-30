@@ -1070,6 +1070,8 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
     with open(filename, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(header)
+        last_adaptive_t_reset_request = False #track if last step requested adaptive reset
+        adaptive_t_reset_request = False
     
         if use_pbar: 
             pbar = tqdm(total=int(end_time), desc="simulating")
@@ -1078,14 +1080,19 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
             while t < end_time:
                 accept_step = True
                 X_prev = X.copy()
+                adaptive_t_reset_request = False
 
-                #Spetial logic when resting
+                #Special logic when resting
                 if vehicle.rider.riding == True:
                     if X[1] < 0:
                         print('negative velocity at time', t, 'distance', X[0], 'speed', X[1])
                         break
                     elif X[1] < 0.2:
                         X[1] = 0.2
+                        #Reset adaptive time step, forcing the speed is a discontinuity, that requires a small time step
+                        adaptive_t_reset_request = True
+
+
                     max_dt = max_dt_user
                 else:
                     max_dt = max_dt_user*10
@@ -1107,8 +1114,17 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
                 err_vec = np.abs(dX - dX_minor) / scale
                 err = np.max(err_vec)
                 
-                #Adaptive time step control
+                if adaptive_t_reset_request:
+                    if last_adaptive_t_reset_request == False:
+                        err_factor = 1.0
+                        discontinuity_factor = 1.0
+                        t_factor = 1.0
+                        last_adaptive_t_reset_request = True
+                else:
+                    last_adaptive_t_reset_request = False
+                    
 
+                #Adaptive time step control
                 #Error based adaptive time step control
                 safety = 0.9
                 p = 3 # ordre du schéma "minor"
@@ -1199,8 +1215,9 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
 
         finally:
             # Make sure bar ends in a clean state
-            if t < end_time and getattr(vehicle.environment, "pathcomplete", False):
-                # If you want it to look 'finished' even when ending early:
-                pbar.n = end_time
-                pbar.refresh()
-            pbar.close()
+            if use_pbar:
+                if t < end_time and getattr(vehicle.environment, "pathcomplete", False):
+                    # If you want it to look 'finished' even when ending early:
+                    pbar.n = end_time
+                    pbar.refresh()
+                pbar.close()
