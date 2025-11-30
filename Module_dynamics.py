@@ -882,14 +882,17 @@ def CurrentWeather(TMYData, Time):
 #different simulate functions
 #solves vehicle.dynamics for a specified simulation time, dt and initial SOC 
 #initial position and velocity are set to 0 and are then controlled by the rider shifts conditions
-def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, output = "full"):
+def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, output = "full", filename_suffix = ""):
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
     battery_capacity = vehicle.battery.capacity
     path = vehicle.environment.path.name
     os.makedirs('SIMRESULTS', exist_ok=True)
-    filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
+    if filename_suffix != "":
+        filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}_{filename_suffix}.csv"
+    else: 
+        filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
 
     # Skip simulation if file exists
     if os.path.exists(filename):
@@ -1020,16 +1023,19 @@ def simulate_RK45(vehicle, simtime_s = 60*60*1, SOC_i = 1):
     df.to_csv(filename, index=False)
 
 def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 1e-3, 1.0], rtol=1e-3, 
-                              base_dt = 1, max_dt=2, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True,
-                              skip_if_result_exist = True):
+                              base_dt = 1, max_dt=2, ffwd_dt = 100, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True,
+                              skip_if_result_exist = True, filename_suffix = ""):
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
     battery_capacity = vehicle.battery.capacity
     path = vehicle.environment.path.name
     os.makedirs('SIMRESULTS', exist_ok=True)
-    filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
-
+    if filename_suffix is not "":
+        filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}_{filename_suffix}.csv"
+    else: 
+        filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
+        
     # Skip simulation if file exists
     if skip_if_result_exist and os.path.exists(filename):
         print(f"File {filename} already exists. Skipping simulation.")
@@ -1072,6 +1078,7 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
         writer.writerow(header)
         last_adaptive_t_reset_request = False #track if last step requested adaptive reset
         adaptive_t_reset_request = False
+        ffwd_dt_allowed = True
     
         if use_pbar: 
             pbar = tqdm(total=int(end_time), desc="simulating")
@@ -1091,11 +1098,15 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
                         X[1] = 0.2
                         #Reset adaptive time step, forcing the speed is a discontinuity, that requires a small time step
                         adaptive_t_reset_request = True
+                        ffwd_dt_allowed = False # prevent ffwd until the rider is back into riding mode
+                        t_factor = min(t_factor,1.0) # force t_factor to 1.0 until the rider is back into riding mode
+                        
 
-
+                    ffwd_dt_allowed = True
                     max_dt = max_dt_user
                 else:
-                    max_dt = max_dt_user*10
+                    if ffwd_dt_allowed:
+                        max_dt = ffwd_dt
 
                 if vehicle.rider.riding == False and X[1] < 0:
                     X[1] = 0  # set velocity to 0 if not riding
@@ -1120,6 +1131,7 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
                         discontinuity_factor = 1.0
                         t_factor = 1.0
                         last_adaptive_t_reset_request = True
+                        accept_step = False
                 else:
                     last_adaptive_t_reset_request = False
                     
