@@ -48,7 +48,7 @@ def run_sim_adaptative(params):
 
     # Run simulation (will skip if results file exists)
     dyn.simulate_variabletimestep(vehicle, simtime_s=simtime, atol=[1, 0.01, 50.0], rtol=0.001,
-                                  base_dt=0.1, max_dv=2,max_dt=10, ffwd_dt=100, SOC_i=0,
+                                  base_dt=0.1, max_dv=2,max_dt=10, ffwd_dt=100, SOC_i=1,
                                   output = "full", use_pbar=True,filename_suffix=suffix)
 
 if __name__ == "__main__":

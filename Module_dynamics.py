@@ -11,6 +11,7 @@ import os
 import csv
 
 import numpy as np
+import time
 
 from scipy.interpolate import interp1d
 from scipy.optimize import brute
@@ -883,6 +884,7 @@ def CurrentWeather(TMYData, Time):
 #solves vehicle.dynamics for a specified simulation time, dt and initial SOC 
 #initial position and velocity are set to 0 and are then controlled by the rider shifts conditions
 def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i = 1, output = "full", filename_suffix = ""):
+    cpu_time_start = time.monotonic()
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
@@ -916,7 +918,7 @@ def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i =
             "lat", "long", "altitude", "timezone", "slope", "direction",
             "WindDirection", "WindSpeed", "Pressure", "Temperature",
             "dni", "ghi", "dhi", "Relativewindspeed", "Motorpower",
-            "POAIrradiance", "Solarpower"
+            "POAIrradiance", "Solarpower", "CPU_time"
         ]
     elif output == "light":
         header = [
@@ -976,7 +978,8 @@ def simulate_fixedtimestep(vehicle:Vehicle, simtime_s = 60*60*1, dt =1 , SOC_i =
                     vehicle.relativewindspeed,
                     vehicle.motorpower,
                     vehicle.solarpanel.I,
-                    vehicle.solarpanel.solarpower
+                    vehicle.solarpanel.solarpower,
+                    time.monotonic()-cpu_time_start
                 ]
             else: #light
                 # Extract location only
@@ -1025,13 +1028,14 @@ def simulate_RK45(vehicle, simtime_s = 60*60*1, SOC_i = 1):
 def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 1e-3, 1.0], rtol=1e-3, 
                               base_dt = 1, max_dt=2, ffwd_dt = 100, max_dv = 0.2, SOC_i = 1, output = "full", use_pbar=True,
                               skip_if_result_exist = True, filename_suffix = ""):
+    cpu_time_start = time.monotonic()
     mass = vehicle.mass
     motor_power = vehicle.motor.RatedPower
     solar_area = vehicle.solarpanel.area
     battery_capacity = vehicle.battery.capacity
     path = vehicle.environment.path.name
     os.makedirs('SIMRESULTS', exist_ok=True)
-    if filename_suffix is not "":
+    if filename_suffix != "":
         filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}_{filename_suffix}.csv"
     else: 
         filename = f"SIMRESULTS/mass_{mass}_motor_{motor_power}_solar_{solar_area}_battery_{battery_capacity}_{path}.csv"
@@ -1062,7 +1066,7 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
             "lat", "long", "altitude", "timezone", "slope", "direction",
             "WindDirection", "WindSpeed", "Pressure", "Temperature",
             "dni", "ghi", "dhi", "Relativewindspeed", "Motorpower",
-            "POAIrradiance", "Solarpower"
+            "POAIrradiance", "Solarpower", "CPU_time"
         ]
     elif output == "light":
         header = [
@@ -1206,7 +1210,8 @@ def simulate_variabletimestep(vehicle:Vehicle, simtime_s = 60*60*1, atol=[1e-3, 
                             vehicle.relativewindspeed,
                             vehicle.motorpower,
                             vehicle.solarpanel.I,
-                            vehicle.solarpanel.solarpower
+                            vehicle.solarpanel.solarpower,
+                            time.monotonic()-cpu_time_start
                         ]
                     else: #light
                         # Extract location only
