@@ -13,7 +13,7 @@ import multiprocessing as mp
 #CODE
 #_________________________________________________________________________________
 def run_sim(params):
-    name, mass, capacity, solararea, power, simtime = params
+    name, mass, capacity, solararea, power, simtime, suffix = params
 
     # Initialize vehicle and environment
     path = dyn.Path(name=name, type='A2A')
@@ -28,10 +28,11 @@ def run_sim(params):
     vehicle.mass = mass
 
     # Run simulation (will skip if results file exists)
-    dyn.simulate_fixedtimestep(vehicle, simtime_s=simtime, dt=1, SOC_i=1, output = "light")
+    dyn.simulate_fixedtimestep(vehicle, simtime_s=simtime, dt=1, SOC_i=1, output = "full",
+                               filename_suffix=suffix)
 
 def run_sim_adaptative(params):
-    name, mass, capacity, solararea, power, simtime = params
+    name, mass, capacity, solararea, power, simtime, suffix = params
 
     # Initialize vehicle and environment
     path = dyn.Path(name=name, type='A2A')
@@ -47,31 +48,45 @@ def run_sim_adaptative(params):
 
     # Run simulation (will skip if results file exists)
     dyn.simulate_variabletimestep(vehicle, simtime_s=simtime, atol=[1, 0.01, 50.0], rtol=0.001,
-                                   base_dt=1, max_dv=0.2, max_dt=5, SOC_i=1, output = "light")
+                                  base_dt=0.1, max_dv=2,max_dt=10, ffwd_dt=100, SOC_i=0,
+                                  output = "full", use_pbar=True,filename_suffix=suffix)
 
 if __name__ == "__main__":
     simtime = 60*60*24*15
 
-    mass_sweep = np.arange(100, 176, 25)
-    capacity_sweep = np.arange(500, 1501, 500)
-    solararea_sweep = np.arange(0.5, 1.51, 0.5)
-    power_sweep = np.arange(250, 376, 125)
+    # name_sweep = np.array(['CGV', 'PROTOUR'])
+    # mass_sweep = np.arange(100, 176, 25)
+    # capacity_sweep = np.arange(500, 1501, 500)
+    # solararea_sweep = np.arange(0.5, 1.51, 0.5)
+    # power_sweep = np.arange(250, 376, 125)
+
+    mass_sweep = np.array([100])
+    capacity_sweep = np.array([500])
+    solararea_sweep = np.array([0.5])
+    power_sweep = np.array([250])
+    name_sweep = np.array(['CGV', 'PROTOUR'])
 
     # Prepare all parameter combinations
     param_grid = [
-        (mass, capacity, solararea, power, simtime)
+        (name, mass, capacity, solararea, power, simtime)
+        for name in name_sweep
         for mass in mass_sweep
         for capacity in capacity_sweep
         for solararea in solararea_sweep
         for power in power_sweep
     ]
 
-    for name in ['CGV', 'PROTOUR']:
-        param_grid_named = [(name, mass, capacity, solararea, power, simtime) for (mass, capacity, solararea, power, simtime) in param_grid]
-        # Use specified CPU cores
-        with mp.Pool(processes=12) as pool:
-            pool.map(run_sim_adaptative, param_grid_named)
-        
-        # Use all available CPU cores
-        # with mp.Pool(mp.cpu_count()) as pool:
-        #     pool.map(run_sim, param_grid_named)
+    param_grid = np.array(param_grid,dtype=object)
+
+    with mp.Pool(processes=12) as pool:
+        args_adapt = np.column_stack([param_grid, np.full(len(param_grid), 'Adaptive', dtype=object)])
+        args_fixed = np.column_stack([param_grid, np.full(len(param_grid), 'Fixed', dtype=object)])
+
+        res1 = pool.map_async(run_sim_adaptative, args_adapt)
+        res2 = pool.map_async(run_sim, args_fixed)
+
+        # force l’attente + remonte les exceptions
+        res1.get()
+        res2.get()
+
+
